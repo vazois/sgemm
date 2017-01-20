@@ -12,11 +12,15 @@ void init(float *&A, float *&B, unsigned int N){
 	for(unsigned int i = 0 ; i < N*N;i++){
 		A[i] = randValue();
 		B[i] = randValue();
+		//A[i] = 1;
+		//B[i] = 1;
 	}
 }
 
 void zeros(float *&C, unsigned int N){
 	for(unsigned int i = 0 ; i < N*N;i++){ C[i] = 0; }
 }
+
+
 
 #endif

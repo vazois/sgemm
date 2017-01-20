@@ -33,7 +33,7 @@ int main(int argc, char **argv){
 	float *D = new float[N*N];
 
 	init(A,B,N);
-	sgemm_score(A,B,C,D,N);
+	sgemm_score_main(A,B,C,D,N);
 
 
 	delete A;
