@@ -11,6 +11,7 @@
 
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <cublas_v2.h>
 #include <curand_kernel.h>
 #include <iostream>
 #include <string>
@@ -31,7 +32,8 @@ namespace cutil{
 	 * Utility functions
 	 */
 	__host__ cudaError_t printDeviceSpecs(bool);
-	__host__ void handleDeviceErrors(cudaError_t error, std::string comment);
+	__host__ void cudaCheckErr(cudaError_t error, std::string comment);
+	__host__ void cublasCheckErr(cublasStatus_t status, std::string comment);
 
 	/*
 	 * Grid and Block dimension computation.
@@ -46,13 +48,13 @@ namespace cutil{
 	 * Memory handling functions.
 	 */
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void allocDevMem(DATA_T **addr, SIZE_T size, std::string msg);
+	__host__ void safeMalloc(DATA_T **addr, SIZE_T size, std::string msg);
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void allocHostMem(DATA_T **addr, SIZE_T size, std::string msg);
+	__host__ void safeMallocHost(DATA_T **addr, SIZE_T size, std::string msg);
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void safeCpyToDevice(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg);
+	__host__ void safeCopyToDevice(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg);
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void safeCpyToHost(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg);
+	__host__ void safeCopyToHost(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg);
 
 	/*
 	 * Random number generation tools
@@ -76,7 +78,7 @@ namespace cutil{
 
 		Utils<unsigned int> u;
 		cudaInitRandStatesKernel<<<grid,block>>>(u.uni(UINT_MAX));
-		handleDeviceErrors(cudaDeviceSynchronize(),"Error initializing random states");
+		cudaCheckErr(cudaDeviceSynchronize(),"Error initializing random states");
 	}
 
 	template<typename DATA_T, typename SIZE_T>
@@ -96,7 +98,7 @@ namespace cutil{
 		dim3 block = block_1D(RAND_BLOCK_THREADS);
 
 		cudaRandInitKernel<DATA_T,SIZE_T><<<grid,block>>>(arr,size);
-		handleDeviceErrors(cudaDeviceSynchronize(),"Error calling cudaRandInitKernel");
+		cudaCheckErr(cudaDeviceSynchronize(),"Error calling cudaRandInitKernel");
 	}
 
 	/*
@@ -106,9 +108,9 @@ namespace cutil{
 	 * msg: Error message to be displayed
 	 */
 	template<typename DATA_T, typename SIZE_T>
-	void allocDevMem(DATA_T **addr, SIZE_T size, std::string msg){
+	void safeMalloc(DATA_T **addr, SIZE_T size, std::string msg){
 		error = cudaMalloc(&(*addr), size);
-		handleDeviceErrors(error, "Error Allocating device " + msg);
+		cudaCheckErr(error, "Error Allocating device " + msg);
 	}
 
 	/*
@@ -119,9 +121,9 @@ namespace cutil{
 	 * msg: error message to be displayed
 	 */
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void allocHostMem(DATA_T **addr, SIZE_T size, std::string msg){
+	__host__ void safeMallocHost(DATA_T **addr, SIZE_T size, std::string msg){
 		error = cudaMallocHost(&(*addr), size);
-		handleDeviceErrors(error, "Error Allocating host "+msg);
+		cudaCheckErr(error, "Error Allocating host "+msg);
 	}
 
 	/*
@@ -132,15 +134,15 @@ namespace cutil{
 	 * msg: error message to be displayed
 	 */
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void safeCpyToDevice(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg){
+	__host__ void safeCopyToDevice(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg){
 		error = cudaMemcpy(to,from,size,cudaMemcpyHostToDevice);
-		handleDeviceErrors(error, "Error Copying to device "+ msg);
+		cudaCheckErr(error, "Error Copying to device "+ msg);
 	}
 
 	template<typename DATA_T, typename SIZE_T>
-	__host__ void safeCpyToHost(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg){
+	__host__ void safeCopyToHost(DATA_T *to, DATA_T *from, SIZE_T size, std::string msg){
 		error = cudaMemcpy(to, from, size, cudaMemcpyDeviceToHost);
-		handleDeviceErrors(error, "Error Copying to device " + msg);
+		cudaCheckErr(error, "Error Copying to device " + msg);
 	}
 
 	/*
@@ -168,14 +170,18 @@ namespace cutil{
 	 * Device error handling
 	 *
 	 */
-	__host__ void handleDeviceErrors(cudaError_t error, std::string comment){
+	__host__ void cudaCheckErr(cudaError_t error, std::string comment){
 		if (error != cudaSuccess){ std::cout << "Cuda Error: " << comment << "," << cudaGetErrorString(error) << std::endl; exit(1); }
+	}
+
+	__host__ void cublasCheckErr(cublasStatus_t status, std::string comment){
+		if ( status != CUBLAS_STATUS_SUCCESS ){ std::cout<<"Cublas Error: "<< comment << std::endl; }
 	}
 
 	__host__ void setActiveDevice(int devID){
 		int devi = devID;
 		cudaDeviceProp devp;
-		handleDeviceErrors(cudaGetDeviceProperties(&devp, devi),"Retrieving Device Properties");
+		cudaCheckErr(cudaGetDeviceProperties(&devp, devi),"Retrieving Device Properties");
 		printf("Using GPU Device %d: \"%s\", compute capability %d.%d\n", devi, devp.name, devp.major, devp.minor);
 		cudaSetDevice(devi);
 	}
@@ -194,13 +200,13 @@ namespace cutil{
 
 		error = cudaGetDeviceCount(&devs);
 		if (!print) return error;
-		if (error != cudaSuccess){ handleDeviceErrors(error, "Error Getting Number of Devices");  return error; }
+		if (error != cudaSuccess){ cudaCheckErr(error, "Error Getting Number of Devices");  return error; }
 		std::cout << std::endl;
 		std::cout << "Number of Devices: (" << devs << ")" << std::endl;
 
 		for (int i = 0; i < devs; i++){
 			error = cudaGetDeviceProperties(&prop, i);
-			if (error != cudaSuccess){ handleDeviceErrors(error, "Error Reading Device Properties");  return error; }
+			if (error != cudaSuccess){ cudaCheckErr(error, "Error Reading Device Properties");  return error; }
 			std::cout << "<<<<<< Device " << i << " >>>>>>" << std::endl;
 
 			std::cout << "Device Name: " << prop.name << std::endl;
@@ -262,18 +268,18 @@ __device__ float cudaUniRand(unsigned int tid);
  * Utility functions
  */
 __host__ cudaError_t printDeviceSpecs(bool);
-__host__ void handleDeviceErrors(cudaError_t error, std::string comment);
+__host__ void cudaCheckErr(cudaError_t error, std::string comment);
 __host__ void setActiveDevice(int devi);
 __host__ void cudaFinalize();
 
 /*
  * Memory handling wrappers.
  */
-template<class V> __host__ void allocDevMem(V **addr, unsigned int size, std::string msg);
-template<class V> __host__ void allocHostMem(V **addr, unsigned int size, std::string msg);
+template<class V> __host__ void safeMalloc(V **addr, unsigned int size, std::string msg);
+template<class V> __host__ void safeMallocHost(V **addr, unsigned int size, std::string msg);
 template<class V> __host__ void safeCpyToSymbol(V *symbol, V *data, std::string msg);
-template<class V> __host__ void safeCpyToDevice(V *to, V *from, unsigned int size, std::string msg);
-template<class V> __host__ void safeCpyToHost(V *to, V *from, unsigned int size, std::string msg);
+template<class V> __host__ void safeCopyToDevice(V *to, V *from, unsigned int size, std::string msg);
+template<class V> __host__ void safeCopyToHost(V *to, V *from, unsigned int size, std::string msg);
 
 /*
  * Grid and Block dimension computation.
