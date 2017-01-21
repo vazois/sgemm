@@ -43,8 +43,8 @@ int main(int argc, char **argv){
 	sgemm_base<<<mgrid,mblock>>>(devA,devB,devC,N);
 	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm_base");
 
-	//sgemm_shared<<<mgrid,mblock>>>(devA,devB,devC,N);
-	//cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm_shared");
+	sgemm_shared<<<mgrid,mblock>>>(devA,devB,devC,N);
+	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm_shared");
 
 	cudaFree(devA); cudaFree(devB); cudaFree(devC); cudaFree(devD);
 	cudaDeviceReset();

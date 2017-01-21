@@ -7,7 +7,7 @@ GEXE=gmain
 COPT_FLAGS= -O3 -ffast-math -funroll-loops -mmmx -msse -msse2 -march=amdfam10
 
 NVCC_FLAGS = --ptxas-options=-v -gencode arch=compute_35,code=sm_35 -rdc=true
-ARCH = -gencode arch=compute_35,code=sm_35 
+ARCH = -gencode arch=compute_61,code=sm_61
 
 all: cpu gpu
 	

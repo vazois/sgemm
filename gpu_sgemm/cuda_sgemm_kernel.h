@@ -7,16 +7,13 @@ __global__ void sgemm_base(float *A, float *B, float *C, unsigned int N){
 	unsigned int row = blockDim.y * blockIdx.y + threadIdx.y;
 	unsigned int col = blockDim.x * blockIdx.x + threadIdx.x;
 
-	if(threadIdx.x == 0){
-		printf("Hello\n");
-	}
-	/*if ( row < N && col < N){
+	if ( row < N && col < N){
 		for (unsigned int i = 0;i < N ; i++){
 			rC += A[row * N + i] * B[i * N + col];
 		}
 
 		C[ row * N + col ] = rC;
-	}*/
+	}
 }
 
 
