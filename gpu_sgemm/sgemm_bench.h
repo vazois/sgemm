@@ -7,7 +7,7 @@
 
 #include "sgemm_kernels.h"
 #define TILE 32
-#define TW 4
+#define TW 8
 
 void cublas_bench(){
 	cutil::setActiveDevice(0);
@@ -121,6 +121,7 @@ void sgemm_bench(unsigned int N){
 	double sgemm_base=t.lap("sgemm_base elapsed time in secs");
 	cutil::safeCopyToHost(hD, dC, sizeof(float)*N*N, "Error copying dC to hD");
 	cmpResults(hA,hB,hC,hD,N,"sgemm_base","sgemm_cache");
+	mm::zeros<<<dimGrid,dimBlock>>>(dC,N);
 
 	///////////////////////////////////////////////////////////////
 	//shared
@@ -132,6 +133,7 @@ void sgemm_bench(unsigned int N){
 	double sgemm_shared=t.lap("sgemm_shared elapsed time in secs");
 	cutil::safeCopyToHost(hD, dC, sizeof(float)*N*N, "Error copying dC to hD");
 	cmpResults(hA,hB,hC,hD,N,"sgemm_shared","sgemm_cache");
+	mm::zeros<<<dimGrid,dimBlock>>>(dC,N);
 
 
 	///////////////////////////////////////////////////////////////
@@ -144,6 +146,11 @@ void sgemm_bench(unsigned int N){
 	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
 	double sgemm_shared2=t.lap("sgemm_shared2 elapsed time in secs");
 	cutil::safeCopyToHost(hD, dC, sizeof(float)*N*N, "Error copying dC to hD");
+	mm::zeros<<<dimGrid,dimBlock>>>(dD,N);
+
+	//for(uint64_t i = 0; i <N *N; i++){
+	//	if(hC[i]!=hD[i])printf("%f,%f\n",hC[i],hD[i]);
+	//}
 	cmpResults(hA,hB,hC,hD,N,"sgemm_shared2","sgemm_cache");
 
 

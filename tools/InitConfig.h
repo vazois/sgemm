@@ -22,7 +22,7 @@ void init(double *&A, double *&B, unsigned int N){
 }
 
 float randValueF(){
-	float X=(float)rand()*128/(float)(RAND_MAX) + 1.0f;
+	float X=(float)rand()*4/(float)(RAND_MAX) + 1.0f;
 	return roundf(X);
 }
 
