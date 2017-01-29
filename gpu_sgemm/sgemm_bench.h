@@ -147,12 +147,24 @@ void sgemm_bench(unsigned int N){
 	double sgemm_shared2=t.lap("sgemm_shared2 elapsed time in secs");
 	cutil::safeCopyToHost(hD, dC, sizeof(float)*N*N, "Error copying dC to hD");
 	mm::zeros<<<dimGrid,dimBlock>>>(dD,N);
+	cmpResults(hA,hB,hC,hD,N,"sgemm_shared2","sgemm_cache");
+
+	///////////////////////////////////////////////////////////////
+	//shared3
+	//dim3 kgrid((k-1)/(TILE*TW) + 1, (m-1)/(TILE) + 1, 1);
+	//dim3 kblock(TILE,TILE,1);
+	cutil::print_grid(kgrid,kblock,"kgpu");
+	t.start();
+	mm::sgemm_shared3<float,unsigned int,TILE,TW><<<kgrid,kblock>>>(dA,dB,dC,m,n,k);
+	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
+	double sgemm_shared3=t.lap("sgemm_shared3 elapsed time in secs");
+	cutil::safeCopyToHost(hD, dC, sizeof(float)*N*N, "Error copying dC to hD");
+	mm::zeros<<<dimGrid,dimBlock>>>(dD,N);
+	cmpResults(hA,hB,hC,hD,N,"sgemm_shared3","sgemm_cache");
 
 	//for(uint64_t i = 0; i <N *N; i++){
 	//	if(hC[i]!=hD[i])printf("%f,%f\n",hC[i],hD[i]);
 	//}
-	cmpResults(hA,hB,hC,hD,N,"sgemm_shared2","sgemm_cache");
-
 
 	///////////////////////////////////////////////////////////////
 	//cublas
@@ -173,6 +185,7 @@ void sgemm_bench(unsigned int N){
 	std::cout << "GFLOPS for sgemm_base: " << ((double)(GFLOPS/sgemm_base))/1000000000 << "\n";
 	std::cout << "GFLOPS for sgemm_shared: " << ((double)(GFLOPS/sgemm_shared))/1000000000 << "\n";
 	std::cout << "GFLOPS for sgemm_shared2: " << ((double)(GFLOPS/sgemm_shared2))/1000000000 << "\n";
+	std::cout << "GFLOPS for sgemm_shared3: " << ((double)(GFLOPS/sgemm_shared3))/1000000000 << "\n";
 	std::cout << "GFLOPS for sgemm_cublas: " << ((double)(GFLOPS/sgemm_cublas))/1000000000 << "\n";
 	///////////////////////////////////////////////////////////////
 

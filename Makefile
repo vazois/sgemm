@@ -20,6 +20,24 @@ cpu:
 gpu:
 	$(NVCC) -std=c++11 $(CUBLAS_LIB) $(ARCH) gpu_sgemm/main.cu -o $(GEXE)
 	
+ptx:
+	$(NVCC) -std=c++11 $(CUBLAS_LIB) $(ARCH) -ptx gpu_sgemm/main.cu
+	./ptx_chain
+	
+dryrun:
+	$(NVCC) -dryrun -std=c++11 $(CUBLAS_LIB) $(ARCH) gpu_sgemm/main.cu -o $(GEXE) --keep 2>dryrunout
+	
 clean:
 	rm -rf $(CEXE)
 	rm -rf $(GEXE)
+	rm -rf main.ptx
+	rm -rf gmain_*
+	rm -rf main.cpp*
+	rm -rf *.ii
+	rm -rf *.cubin
+	rm -rf *.gpu
+	rm -rf *.cudafe*
+	rm -rf *.o
+	rm -rf *fatbin*
+	rm -rf *module_id
+	

@@ -65,7 +65,6 @@ namespace mm{
 					__syncthreads();
 					for(int j = 0;j< TILE; j++){
 						rC += sA[threadIdx.y * TILE + j] * sB[j * TILE + threadIdx.x]; // 354 GFLOPS
-						//rC += sA[threadIdx.y * TILE + j] * sB[threadIdx.y * TILE + j]; // 454 GFLOPS
 					}
 					__syncthreads();
 			}
@@ -135,7 +134,6 @@ namespace mm{
 					rC8 += sA[sharedIndexA] * sB8[sharedIndexB];
 					sharedIndexB+=TILE;
 					sharedIndexA++;
-					//rC += sA[threadIdx.y * TILE + j] * sB[threadIdx.y * TILE + j]; // 454 GFLOPS
 				}
 				__syncthreads();
 			}
@@ -151,71 +149,85 @@ namespace mm{
 	}
 
 	template<typename DATA_T, typename SIZE_T, unsigned int TILE, unsigned int TW>
-	__global__ void sgemm_shared3(
-			DATA_T *A,
-			DATA_T *B,
-			DATA_T *C,
-			SIZE_T m,
-			SIZE_T n,
-			SIZE_T k
-		){
+		__global__ void sgemm_shared3(
+				DATA_T *A,
+				DATA_T *B,
+				DATA_T *C,
+				SIZE_T m,
+				SIZE_T n,
+				SIZE_T k
+			){
 			__shared__ DATA_T sA[TILE * TILE];
 			__shared__ DATA_T sB1[TILE * TILE];
 			__shared__ DATA_T sB2[TILE * TILE];
 			__shared__ DATA_T sB3[TILE * TILE];
 			__shared__ DATA_T sB4[TILE * TILE];
+			__shared__ DATA_T sB5[TILE * TILE];
+			__shared__ DATA_T sB6[TILE * TILE];
+			__shared__ DATA_T sB7[TILE * TILE];
+			__shared__ DATA_T sB8[TILE * TILE];
 
 			uint32_t row = ( blockIdx.y * blockDim.y + threadIdx.y );
 			uint32_t col = ( blockIdx.x * blockDim.x*TW + threadIdx.x );
+			//if(threadIdx.y == 0 && threadIdx.x == 0){
+			//	printf("bx: (%d,%d) row: %d col: %d --> row: %d col: %d\n",blockIdx.x, blockIdx.y,row,col,row, col + blockDim.x);
+			//}
 			DATA_T rC1 = 0;
 			DATA_T rC2 = 0;
 			DATA_T rC3 = 0;
 			DATA_T rC4 = 0;
+			DATA_T rC5 = 0;
+			DATA_T rC6 = 0;
+			DATA_T rC7 = 0;
+			DATA_T rC8 = 0;
 
 			uint32_t sharedLoadIndex = threadIdx.y*TILE + threadIdx.x;
 			uint32_t rowOffset = row * n + threadIdx.x;
 			uint32_t colOffset = threadIdx.y * k + col;
-
-//			printf("Hello World!!!%f\n",A[ rowOffset ]);
-
-			uint32_t sharedIndexA = threadIdx.y * TILE;
-			uint32_t sharedIndexB = threadIdx.x;
-			for(uint32_t i = 0; i < (n - 1)/TILE + 1; i++){
-					sA[sharedLoadIndex] = A[ rowOffset ];
-					sB1[sharedLoadIndex] = B[ colOffset ];
-					sB2[sharedLoadIndex] = B[ colOffset + blockDim.x ];
-					sB3[sharedLoadIndex] = B[ colOffset + blockDim.x*2 ];
-					sB4[sharedLoadIndex] = B[ colOffset + blockDim.x*3 ];
-					rowOffset+=TILE;
-					colOffset+=TILE * k ;
-					__syncthreads();
-
-					sharedIndexA = threadIdx.y * TILE;
-					sharedIndexB = threadIdx.x;
-					#pragma unroll
-					for(uint8_t j = 0;j< TILE; j++){
-						rC1 += sA[sharedIndexA] * sB1[sharedIndexB]; // 354 GFLOPS
-						rC2 += sA[sharedIndexA] * sB2[sharedIndexB]; // 354 GFLOPS
-						rC3 += sA[sharedIndexA] * sB3[sharedIndexB];
-						rC4 += sA[sharedIndexA] * sB4[sharedIndexB];
-						sharedIndexA++;
-						sharedIndexB+=TILE;
-						/*rC += sA[sharedIndexA] * sB[sharedIndexA]; // 354 GFLOPS
-						rC1 += sA[sharedIndexA] * sB2[sharedIndexA]; // 354 GFLOPS
-						rC2 += sA[sharedIndexA] * sB3[sharedIndexA];
-						rC3 += sA[sharedIndexA] * sB4[sharedIndexA];
-						sharedIndexA++;*/
-						//rC += sA[threadIdx.y * TILE + j] * sB[threadIdx.y * TILE + j]; // 454 GFLOPS
-					}
-					__syncthreads();
+			for(uint32_t i = 0; i < (n-1)/TILE + 1; i++){
+				sA[sharedLoadIndex] = A[ rowOffset ];
+				sB1[sharedLoadIndex] = B[ colOffset ];
+				sB2[sharedLoadIndex] = B[ colOffset + blockDim.x];
+				sB3[sharedLoadIndex] = B[ colOffset + blockDim.x*2];
+				sB4[sharedLoadIndex] = B[ colOffset + blockDim.x*3];
+				sB5[sharedLoadIndex] = B[ colOffset + blockDim.x*4];
+				sB6[sharedLoadIndex] = B[ colOffset + blockDim.x*5];
+				sB7[sharedLoadIndex] = B[ colOffset + blockDim.x*6];
+				sB8[sharedLoadIndex] = B[ colOffset + blockDim.x*7];
+				rowOffset+=TILE;
+				colOffset+=k*TILE;
+				__syncthreads();
+				uint32_t sharedIndexA = threadIdx.y * TILE;
+				uint32_t sharedIndexB = threadIdx.x;
+				DATA_T rA1 = 0;
+				DATA_T rA2 = 0;
+				//DATA_T rB1 = 0;
+				//DATA_T rB2 = 0;
+				for(uint32_t j = 0;j< TILE; j+=2){
+					rA1 = sA[sharedIndexA]; rA2 = sA[sharedIndexA + 1];
+					rC1 += rA1 * sB1[sharedIndexB] + rA2 * sB1[sharedIndexB + TILE];
+					rC2 += rA1 * sB2[sharedIndexB] + rA2 * sB2[sharedIndexB + TILE];
+					rC3 += rA1 * sB3[sharedIndexB] + rA2 * sB3[sharedIndexB + TILE];
+					rC4 += rA1 * sB4[sharedIndexB] + rA2 * sB4[sharedIndexB + TILE];
+					rC5 += rA1 * sB5[sharedIndexB] + rA2 * sB5[sharedIndexB + TILE];
+					rC6 += rA1 * sB6[sharedIndexB] + rA2 * sB6[sharedIndexB + TILE];
+					rC7 += rA1 * sB7[sharedIndexB] + rA2 * sB7[sharedIndexB + TILE];
+					rC8 += rA1 * sB8[sharedIndexB] + rA2 * sB8[sharedIndexB + TILE];
+					sharedIndexB+=(TILE<<1);
+					sharedIndexA+=2;
+				}
+				__syncthreads();
 			}
+
 			C[row * k + col] = rC1;
 			C[row * k + col + blockDim.x] = rC2;
-			C[row * k + col + blockDim.x*2] = rC2;
+			C[row * k + col + blockDim.x*2] = rC3;
 			C[row * k + col + blockDim.x*3] = rC4;
-
+			C[row * k + col + blockDim.x*4] = rC5;
+			C[row * k + col + blockDim.x*5] = rC6;
+			C[row * k + col + blockDim.x*6] = rC7;
+			C[row * k + col + blockDim.x*7] = rC8;
 	}
-
 }
 
 
