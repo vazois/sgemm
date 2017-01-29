@@ -87,6 +87,7 @@ namespace cutil{
 
 		while(i < size){
 			arr[i] = cudaUniRand(i);
+			//arr[i] = 1;
 			i+=gridDim.x * blockDim.x;
 		}
 	}
@@ -161,8 +162,9 @@ namespace cutil{
 		return dim3(data_per_block, 1, 1);
 	}
 
-	void print_grid(dim3 grid, dim3 block){
-		std::cout<<"grid("<<grid.x <<","<<grid.y << "," << grid.z <<")"<<std::endl;
+	void print_grid(dim3 grid, dim3 block,std::string msg){
+		std::cout<< msg <<" = ";
+		std::cout<<"grid("<<grid.x <<","<<grid.y << "," << grid.z <<") -- ";
 		std::cout<<"block("<<block.x <<","<<block.y << "," << block.z <<")"<<std::endl;
 	}
 
