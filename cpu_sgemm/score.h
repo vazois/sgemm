@@ -2,7 +2,12 @@
 #define SCORE_H
 
 #include <cmath>
+#include <mmintrin.h>
+#include <xmmintrin.h>
 #include <emmintrin.h>
+//#include <pmmintrin.h>
+//#include <xmmintrin.h>
+//#include <smmintrin.h>
 #include <stdint.h>
 #include <cblas.h>
 #include "../time/Time.h"
@@ -78,7 +83,6 @@ void dgemm_reg_blocking(const double *A, const double *B, double *&C, uint64_t N
 	}
 }
 
-
 void dgemm_cache(const double *A, const double *B, double *&C, uint64_t N){
 	for(uint64_t i = 0; i < N ; i++){
 		for(uint64_t k = 0; k < N ;k+=4){
@@ -127,31 +131,58 @@ void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
 	}
 }
 
-void dgemm_block2(const double *A, const double *B, double *&C, uint64_t N){
-	uint64_t Bz = 16;
-	for(uint64_t i = 0; i < N; i+=Bz){
-		for(uint64_t j = 0; j < N; j+=Bz){
-			for(uint64_t k = 0; k < N; k+=Bz){
-				//Blocked Matrix
+void dgemm_cache2(const double *A, const double *B, double *&C, uint64_t N){
+	for(uint64_t i = 0; i < N ; i++){
+		for(uint64_t k = 0; k < N ;k+=4){
+			register uint64_t iA = i * N + k;
+			//register double rA = A[ iA ];
+			//register double rA1 = A[ iA + 1 ];
+			//register double rA2 = A[ iA + 2 ];
+			//register double rA3 = A[ iA + 3 ];
 
-				for(uint64_t ii = i; ii < i + Bz; ii++){
-					register uint64_t iA = ii*N;
-					register uint64_t iC = ii*N;
-					for(uint64_t kk = k; kk < k + Bz; kk+=2){
-						iA+=kk;
-						register double rA = A[iA];
-						register double rA1 = A[iA + 1];
-						register uint64_t iB = kk*N;
-						for(uint64_t jj = j; jj < j + Bz; jj+=4){
+			__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
+			__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
+			__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
+			__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
 
-							C[iC + jj]+= rA * B[iB + jj] + rA1 * B[iB + N + jj];
-							C[iC + jj + 1]+= rA * B[iB + jj + 1] + rA1 * B[iB + N + jj + 1];
-							C[iC + jj + 2]+= rA * B[iB + jj + 2] + rA1 * B[iB + N + jj + 2];
-							C[iC + jj + 3]+= rA * B[iB + jj + 3] + rA1 * B[iB + N + jj + 3];
-						}
-					}
-				}
+			for(uint64_t j = 0 ; j < N ; j+=4){
+				register uint64_t iB = k * N + j;
+				register uint64_t iiB = iB + N;
+				register uint64_t iiiB = iiB + N;
+				register uint64_t iiiiB = iiiB + N;
 
+				register uint64_t iC = i * N + j;
+
+				__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
+				__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
+				__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
+				__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+
+				vB1 = _mm_load_pd(&B[iiB]);
+				vB2 = _mm_load_pd(&B[iiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+
+				vB1 = _mm_load_pd(&B[iiiB]);
+				vB2 = _mm_load_pd(&B[iiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+
+				vB1 = _mm_load_pd(&B[iiiiB]);
+				vB2 = _mm_load_pd(&B[iiiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+
+				_mm_store_pd(&C[iC],vC1);
+				_mm_store_pd(&C[iC+2],vC2);
+
+				//_mm_mul_pd(vA1,vB1);
+				//C[iC] += rA * B[ iB ] + rA1 * B[ iiB ] + rA2 * B[ iiiB ] + rA3 * B[ iiiiB ];
+				//C[iC + 1] += rA * B[ iB + 1 ] + rA1 * B[ iiB + 1 ] + rA2 * B[ iiiB + 1 ] + rA3 * B[ iiiiB + 1 ];
+				//C[iC + 2] += rA * B[ iB + 2 ] + rA1 * B[ iiB + 2 ] + rA2 * B[ iiiB + 2 ] + rA3 * B[ iiiiB + 2 ];
+				//C[iC + 3] += rA * B[ iB + 3 ] + rA1 * B[ iiB + 3 ] + rA2 * B[ iiiB + 3 ] + rA3 * B[ iiiiB + 3 ];
 			}
 		}
 	}
@@ -181,7 +212,7 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t N){
 
 	//4
 	t.start();
-	dgemm_cache(A,B,D,N);
+	dgemm_cache2(A,B,D,N);
 	double dgemm_cache = t.lap("dgemm_cache elapsed time in secs");
 	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_cache");
 	zeros(D,N);
