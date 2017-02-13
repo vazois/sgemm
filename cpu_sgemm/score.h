@@ -38,7 +38,7 @@ void dgemm_base(const double *A, const double *B, double *&C, uint64_t N){
 	}
 }
 
-void dgemm_regC(const double *A, const double *B, double *&C, uint64_t N){
+void dgemm_reg_reuse(const double *A, const double *B, double *&C, uint64_t N){
 	for(uint64_t i = 0; i < N ;i++){
 		for(uint64_t j = 0; j < N ;j++){
 			register double rC = 0.0f;
@@ -83,7 +83,7 @@ void dgemm_reg_blocking(const double *A, const double *B, double *&C, uint64_t N
 	}
 }
 
-void dgemm_cache2(const double *A, const double *B, double *&C, uint64_t N){
+void dgemm_reorder(const double *A, const double *B, double *&C, uint64_t N){
 	for(uint64_t i = 0; i < N ; i++){
 		for(uint64_t k = 0; k < N ;k+=4){
 			register uint64_t iA = i * N + k;
@@ -110,18 +110,110 @@ void dgemm_cache2(const double *A, const double *B, double *&C, uint64_t N){
 	}
 }
 
-void dgemm_cache(const double *A, const double *B, double *&C, uint64_t N){
-	for(uint64_t i = 0; i < N ;i++){
-		for(uint64_t k = 0; k < N ;k++){
-			register double rA = A[i * N + k];
-			for(uint64_t j = 0; j < N ;j++){
-				C[i * N + j] += rA * B[ k * N + j ];
+void dgemm_reorder_sse2(const double *A, const double *B, double *&C, uint64_t N){
+	for(uint64_t i = 0; i < N ; i++){
+		for(uint64_t k = 0; k < N ;k+=4){
+			register uint64_t iA = i * N + k;
+			__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
+			__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
+			__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
+			__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
+
+			for(uint64_t j = 0 ; j < N ; j+=4){
+				register uint64_t iB = k * N + j;
+				register uint64_t iiB = iB + N;
+				register uint64_t iiiB = iiB + N;
+				register uint64_t iiiiB = iiiB + N;
+
+				register uint64_t iC = i * N + j;
+
+
+				//1
+				__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
+				__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
+				__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
+				__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+
+				//2
+				vB1 = _mm_load_pd(&B[iiB]);
+				vB2 = _mm_load_pd(&B[iiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+
+				//3
+				vB1 = _mm_load_pd(&B[iiiB]);
+				vB2 = _mm_load_pd(&B[iiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+
+				//4
+				vB1 = _mm_load_pd(&B[iiiiB]);
+				vB2 = _mm_load_pd(&B[iiiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+
+				_mm_store_pd(&C[iC],vC1);
+				_mm_store_pd(&C[iC+2],vC2);
 			}
 		}
 	}
 }
 
-void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
+void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t N){
+	for(uint64_t i = 0; i < N ; i++){
+		for(uint64_t k = 0; k < N ;k+=4){
+			register uint64_t iA = i * N + k;
+			__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
+			__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
+			__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
+			__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
+
+			for(uint64_t j = 0 ; j < N ; j+=4){
+				register uint64_t iB = k * N + j;
+				register uint64_t iiB = iB + N;
+				register uint64_t iiiB = iiB + N;
+				register uint64_t iiiiB = iiiB + N;
+
+				register uint64_t iC = i * N + j;
+
+
+				//1
+				__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
+				__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
+				__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
+				__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+
+				//2
+				vB1 = _mm_load_pd(&B[iiB]);
+				vB2 = _mm_load_pd(&B[iiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+
+				//3
+				vB1 = _mm_load_pd(&B[iiiB]);
+				vB2 = _mm_load_pd(&B[iiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+
+				//4
+				vB1 = _mm_load_pd(&B[iiiiB]);
+				vB2 = _mm_load_pd(&B[iiiiB+2]);
+				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
+				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+
+				_mm_store_pd(&C[iC],vC1);
+				_mm_store_pd(&C[iC+2],vC2);
+			}
+		}
+	}
+}
+
+
+void dgemm_block2(const double *A, const double *B, double *&C, uint64_t N){
 	uint64_t Bz = 32;
 	for(uint64_t i = 0; i < N; i+=Bz){
 		for(uint64_t j = 0; j < N; j+=Bz){
@@ -142,47 +234,71 @@ void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
 	}
 }
 
-void dgemm_cache_sse(const double *A, const double *B, double *&C, uint64_t N){
-	for(uint64_t i = 0; i < N ; i++){
-		for(uint64_t k = 0; k < N ;k+=4){
-			register uint64_t iA = i * N + k;
-			__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
-			__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
-			__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
-			__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
+void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
+	uint64_t Bx = 512;
+	uint64_t By = 512;
+	uint64_t Bz = 4;
+	for(uint64_t i = 0; i < N; i+=Bx){
+		for(uint64_t j = 0; j < N; j+=By){
+			for(uint64_t k = 0; k < N; k+=Bz){
+				//Blocked Matrix
 
-			for(uint64_t j = 0 ; j < N ; j+=4){
-				register uint64_t iB = k * N + j;
-				register uint64_t iiB = iB + N;
-				register uint64_t iiiB = iiB + N;
-				register uint64_t iiiiB = iiiB + N;
+				for(uint64_t ii = i; ii < i + Bx ; ii++){
+					for(uint64_t kk = k; kk < k + Bz ;kk+=4){
+						register uint64_t iA = ii * N + kk;
+						__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
+						__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
+						__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
+						__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
 
-				register uint64_t iC = i * N + j;
+						for(uint64_t jj = j ; jj < j + By ; jj+=4){
+							register uint64_t iB = kk * N + jj;
+							register uint64_t iiB = iB + N;
+							register uint64_t iiiB = iiB + N;
+							register uint64_t iiiiB = iiiB + N;
 
-				__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
-				__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
-				__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
-				__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
-				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
-				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+							register uint64_t iC = ii * N + jj;
 
-				vB1 = _mm_load_pd(&B[iiB]);
-				vB2 = _mm_load_pd(&B[iiB+2]);
-				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
-				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+							__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
+							__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
+							__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
+							__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
 
-				vB1 = _mm_load_pd(&B[iiiB]);
-				vB2 = _mm_load_pd(&B[iiiB+2]);
-				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
-				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+							vB1 = _mm_load_pd(&B[iiB]);
+							vB2 = _mm_load_pd(&B[iiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
 
-				vB1 = _mm_load_pd(&B[iiiiB]);
-				vB2 = _mm_load_pd(&B[iiiiB+2]);
-				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
-				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+							vB1 = _mm_load_pd(&B[iiiB]);
+							vB2 = _mm_load_pd(&B[iiiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
 
-				_mm_store_pd(&C[iC],vC1);
-				_mm_store_pd(&C[iC+2],vC2);
+							vB1 = _mm_load_pd(&B[iiiiB]);
+							vB2 = _mm_load_pd(&B[iiiiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+
+							_mm_store_pd(&C[iC],vC1);
+							_mm_store_pd(&C[iC+2],vC2);
+						}
+					}
+				}
+
+				//double *ptr = &(C[ i * N + j ]);
+				//dgemm_reorder_sse( &A[ i * N + k ], &B[ k * N + j ], ptr, Bz);
+				//for(uint64_t ii = i; ii < i + Bz; ii++){
+				//	for(uint64_t jj = j; jj < j + Bz; jj++){
+				//		register double rC = C[ii * N + jj];
+				//		for(uint64_t kk = k; kk < k + Bz; kk++){
+				//				rC+= A[ii * N + kk] * B[kk*N + jj];
+				//		}
+				//		C[ii * N + jj] = rC;
+				//	}
+				//}
+
 			}
 		}
 	}
@@ -198,9 +314,9 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t N){
 
 	//2
 	t.start();
-	dgemm_regC(A,B,D,N);
-	double dgemm_regC = t.lap("dgemm_regC elapsed time in secs");
-	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_regC");
+	dgemm_reg_reuse(A,B,D,N);
+	double dgemm_reg_reuse = t.lap("dgemm_reg_reuse elapsed time in secs");
+	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_reg_reuse");
 	zeros(D,N);
 
 	//3
@@ -212,15 +328,15 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t N){
 
 	//4
 	t.start();
-	dgemm_cache(A,B,D,N);
-	double dgemm_cache = t.lap("dgemm_cache elapsed time in secs");
-	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_cache");
+	dgemm_reorder(A,B,D,N);
+	double dgemm_reorder = t.lap("dgemm_reorder elapsed time in secs");
+	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_reorder");
 	zeros(D,N);
 
 	t.start();
-	dgemm_cache_sse(A,B,D,N);
-	double dgemm_cache_sse = t.lap("dgemm_cache_sse elapsed time in secs");
-	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_cache_sse");
+	dgemm_reorder_sse(A,B,D,N);
+	double dgemm_reorder_sse = t.lap("dgemm_reorder_sse elapsed time in secs");
+	cmpResults(A,B,C,D,N,"dgemm_base","dgemm_reorder_sse");
 	zeros(D,N);
 
 	//5
@@ -238,18 +354,18 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t N){
 
 	double GFLOPS = (double)(N*N*N*2);
 	std::cout<< "Elapsed time for dgemm_base: " << dgemm_base << " seconds\n";
-	std::cout<< "Elapsed time for dgemm_regC: " << dgemm_regC << " seconds\n";
+	std::cout<< "Elapsed time for dgemm_reg_reuse: " << dgemm_reg_reuse << " seconds\n";
 	std::cout<< "Elapsed time for dgemm_reg_blocking: " << dgemm_reg_blocking << " seconds\n";
-	std::cout<< "Elapsed time for dgemm_cache: " << dgemm_cache << " seconds\n";
-	std::cout<< "Elapsed time for dgemm_cache_sse: " << dgemm_cache_sse << " seconds\n";
+	std::cout<< "Elapsed time for dgemm_reorder: " << dgemm_reorder << " seconds\n";
+	std::cout<< "Elapsed time for dgemm_reorder_sse: " << dgemm_reorder_sse << " seconds\n";
 	std::cout<< "Elapsed time for dgemm_block: " << dgemm_block << " seconds\n";
 	std::cout<< "Elapsed time for dgemm_cblas: " << dgemm_cblas << " seconds\n";
 
 	std::cout << "GFLOPS for dgemm_base: " << ((double)(GFLOPS/dgemm_base))/1000000000 << "\n";
-	std::cout << "GFLOPS for dgemm_regC: " << ((double)(GFLOPS/dgemm_regC))/1000000000 << "\n";
+	std::cout << "GFLOPS for dgemm_reg_reuse: " << ((double)(GFLOPS/dgemm_reg_reuse))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_reg_blocking: " << ((double)(GFLOPS/dgemm_reg_blocking))/1000000000 << "\n";
-	std::cout << "GFLOPS for dgemm_cache: " << ((double)(GFLOPS/dgemm_cache))/1000000000 << "\n";
-	std::cout << "GFLOPS for dgemm_cache_sse: " << ((double)(GFLOPS/dgemm_cache_sse))/1000000000 << "\n";
+	std::cout << "GFLOPS for dgemm_reorder: " << ((double)(GFLOPS/dgemm_reorder))/1000000000 << "\n";
+	std::cout << "GFLOPS for dgemm_reorder_sse: " << ((double)(GFLOPS/dgemm_reorder_sse))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_block: " << ((double)(GFLOPS/dgemm_block))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_cblas: " << ((double)(GFLOPS/dgemm_cblas))/1000000000 << "\n";
 }
