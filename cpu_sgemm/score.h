@@ -4,7 +4,7 @@
 #include <cmath>
 #include <mmintrin.h>
 #include <xmmintrin.h>
-#include <emmintrin.h>
+//#include <emmintrin.h>
 //#include <pmmintrin.h>
 //#include <xmmintrin.h>
 //#include <smmintrin.h>
@@ -162,13 +162,19 @@ void dgemm_reorder_sse2(const double *A, const double *B, double *&C, uint64_t N
 }
 
 void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t N){
-	for(uint64_t i = 0; i < N ; i++){
+	for(uint64_t i = 0; i < N ; i+=2){
 		for(uint64_t k = 0; k < N ;k+=4){
 			register uint64_t iA = i * N + k;
+			register uint64_t iiA = iA + N;
 			__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
 			__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
 			__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
 			__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
+
+			__m128d vA11 = _mm_load_pd1(&A[iiA]);//rA
+			__m128d vA12 = _mm_load_pd1(&A[iiA+1]);//rA1
+			__m128d vA13 = _mm_load_pd1(&A[iiA+2]);//rA2
+			__m128d vA14 = _mm_load_pd1(&A[iiA+3]);//rA3
 
 			for(uint64_t j = 0 ; j < N ; j+=4){
 				register uint64_t iB = k * N + j;
@@ -177,6 +183,7 @@ void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t N)
 				register uint64_t iiiiB = iiiB + N;
 
 				register uint64_t iC = i * N + j;
+				register uint64_t iiC = iC + N;
 
 
 				//1
@@ -184,48 +191,70 @@ void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t N)
 				__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
 				__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
 				__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+				__m128d vC3 = _mm_load_pd(&C[iiC]);//rC,rC1
+				__m128d vC4 = _mm_load_pd(&C[iiC+2]);//rC2,rC3
+
+
 				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
 				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+				vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA11,vB1));
+				vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA11,vB2));
 
 				//2
 				vB1 = _mm_load_pd(&B[iiB]);
 				vB2 = _mm_load_pd(&B[iiB+2]);
 				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
 				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+				vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA12,vB1));
+				vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA12,vB2));
 
 				//3
 				vB1 = _mm_load_pd(&B[iiiB]);
 				vB2 = _mm_load_pd(&B[iiiB+2]);
 				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
 				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+				vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA13,vB1));
+				vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA13,vB2));
 
 				//4
 				vB1 = _mm_load_pd(&B[iiiiB]);
 				vB2 = _mm_load_pd(&B[iiiiB+2]);
 				vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
 				vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+				vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA14,vB1));
+				vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA14,vB2));
 
 				_mm_store_pd(&C[iC],vC1);
 				_mm_store_pd(&C[iC+2],vC2);
+				_mm_store_pd(&C[iiC],vC3);
+				_mm_store_pd(&C[iiC+2],vC4);
 			}
 		}
 	}
 }
 
-
 void dgemm_block2(const double *A, const double *B, double *&C, uint64_t N){
-	uint64_t Bz = 32;
-	for(uint64_t i = 0; i < N; i+=Bz){
-		for(uint64_t j = 0; j < N; j+=Bz){
+	uint64_t Bx = 4;
+	uint64_t By = 512;
+	uint64_t Bz = 4;
+
+	double sA[Bx * Bz];
+	for(uint64_t i = 0; i < N; i+=Bx){
+		for(uint64_t j = 0; j < N; j+=By){
 			for(uint64_t k = 0; k < N; k+=Bz){
 				//Blocked Matrix
-				for(uint64_t ii = i; ii < i + Bz; ii++){
-					for(uint64_t jj = j; jj < j + Bz; jj++){
-						register double rC = C[ii * N + jj];
-						for(uint64_t kk = k; kk < k + Bz; kk++){
-								rC+= A[ii * N + kk] * B[kk*N + jj];
+
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					for(uint64_t kk = 0; kk < Bz; kk++){
+						sA[ii * Bz + kk]=A[(i+ii) * N + k + kk];
+					}
+				}
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					for(uint64_t kk = 0; kk < Bz; kk++){
+						register double rA = sA[ii * Bz + kk];
+						for(uint64_t jj = j; jj < j + By; jj++){
+							C[(ii + i) * N + jj]+= rA * B[(kk + k) * N + jj];
 						}
-						C[ii * N + jj] = rC;
 					}
 				}
 
@@ -235,21 +264,27 @@ void dgemm_block2(const double *A, const double *B, double *&C, uint64_t N){
 }
 
 void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
-	uint64_t Bx = 512;
-	uint64_t By = 512;
+	uint64_t Bx = 4;
+	uint64_t By = 1024;
 	uint64_t Bz = 4;
 	for(uint64_t i = 0; i < N; i+=Bx){
-		for(uint64_t j = 0; j < N; j+=By){
-			for(uint64_t k = 0; k < N; k+=Bz){
+		for(uint64_t k = 0; k < N; k+=Bz){
+			for(uint64_t j = 0; j < N; j+=By){
 				//Blocked Matrix
 
-				for(uint64_t ii = i; ii < i + Bx ; ii++){
+				for(uint64_t ii = i; ii < i + Bx ; ii+=2){
 					for(uint64_t kk = k; kk < k + Bz ;kk+=4){
 						register uint64_t iA = ii * N + kk;
+						register uint64_t iiA = iA + N;
 						__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
 						__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
 						__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
 						__m128d vA4 = _mm_load_pd1(&A[iA+3]);//rA3
+
+						__m128d vA11 = _mm_load_pd1(&A[iiA]);//rA
+						__m128d vA12 = _mm_load_pd1(&A[iiA+1]);//rA1
+						__m128d vA13 = _mm_load_pd1(&A[iiA+2]);//rA2
+						__m128d vA14 = _mm_load_pd1(&A[iiA+3]);//rA3
 
 						for(uint64_t jj = j ; jj < j + By ; jj+=4){
 							register uint64_t iB = kk * N + jj;
@@ -258,51 +293,53 @@ void dgemm_block(const double *A, const double *B, double *&C, uint64_t N){
 							register uint64_t iiiiB = iiiB + N;
 
 							register uint64_t iC = ii * N + jj;
+							register uint64_t iiC = iC + N;
 
 							__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
 							__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
 							__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
 							__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+							__m128d vC3 = _mm_load_pd(&C[iiC]);//rC,rC1
+							__m128d vC4 = _mm_load_pd(&C[iiC+2]);//rC2,rC3
+
 							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
 							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA11,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA11,vB2));
 
 							vB1 = _mm_load_pd(&B[iiB]);
 							vB2 = _mm_load_pd(&B[iiB+2]);
 							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
 							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA12,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA12,vB2));
 
 							vB1 = _mm_load_pd(&B[iiiB]);
 							vB2 = _mm_load_pd(&B[iiiB+2]);
 							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
 							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA13,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA13,vB2));
 
 							vB1 = _mm_load_pd(&B[iiiiB]);
 							vB2 = _mm_load_pd(&B[iiiiB+2]);
 							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
 							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA14,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA14,vB2));
 
 							_mm_store_pd(&C[iC],vC1);
 							_mm_store_pd(&C[iC+2],vC2);
+							_mm_store_pd(&C[iiC],vC3);
+							_mm_store_pd(&C[iiC+2],vC4);
 						}
 					}
 				}
-
-				//double *ptr = &(C[ i * N + j ]);
-				//dgemm_reorder_sse( &A[ i * N + k ], &B[ k * N + j ], ptr, Bz);
-				//for(uint64_t ii = i; ii < i + Bz; ii++){
-				//	for(uint64_t jj = j; jj < j + Bz; jj++){
-				//		register double rC = C[ii * N + jj];
-				//		for(uint64_t kk = k; kk < k + Bz; kk++){
-				//				rC+= A[ii * N + kk] * B[kk*N + jj];
-				//		}
-				//		C[ii * N + jj] = rC;
-				//	}
-				//}
-
 			}
 		}
 	}
 }
+
 
 void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t N){
 	Time<secs> t;

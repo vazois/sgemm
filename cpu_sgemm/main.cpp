@@ -5,6 +5,7 @@
 #include "../time/CTime.h"
 
 #include "score.h"
+//#include "dgemm_omp.h"
 
 
 int main(int argc, char **argv){
@@ -30,6 +31,8 @@ int main(int argc, char **argv){
 	openblas_set_num_threads(1);
 	init(A,B,N);
 	dgemm_score_main(A,B,C,D,N);
+
+	//dgemm_omp(A,B,C,N);
 
 	delete A;
 	delete B;
