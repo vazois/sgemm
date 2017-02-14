@@ -7,18 +7,14 @@
 #include <time.h>
 
 double randValue(){
-	double X=((double)rand()*128/(double)RAND_MAX) + 1.0f;
+	double X=((double)rand()*2/(double)RAND_MAX) + 1.0f;
 	return roundf(X);
 }
 
-void init(double *&A, double *&B, unsigned int N){
+void init(double *&A, double *&B, uint64_t M, uint64_t N, uint64_t K){
 	srand(time(NULL));
-	for(unsigned int i = 0 ; i < N*N;i++){
-		A[i] = randValue();
-		B[i] = randValue();
-		//A[i] = 1;
-		//B[i] = 1;
-	}
+	for(uint64_t i = 0; i< M*N; i++) A[i] = randValue();
+	for(uint64_t i = 0; i< N*K; i++) B[i] = randValue();
 }
 
 float randValueF(){
@@ -34,8 +30,8 @@ void initF(float *&A, float *&B, uint64_t N){
 	}
 }
 
-void zeros(double *&C, unsigned int N){
-	for(unsigned int i = 0 ; i < N*N;i++){ C[i] = 0; }
+void zeros(double *&C, uint64_t M, uint64_t K){
+	for(unsigned int i = 0 ; i < M*K;i++){ C[i] = 0; }
 }
 
 
