@@ -23,7 +23,7 @@ int main(int argc, char **argv){
 	}*/
 
 	//uint64_t M = 128;
-	//uint64_t N = 768;
+	//uint64_t N = 128;
 	//uint64_t K = 1024;
 	uint64_t M = 1024;
 	uint64_t N = 1024;
@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 	double *C = new double[M*K];
 	double *D = new double[M*K];
 
-	openblas_set_num_threads(1);
+	openblas_set_num_threads(16);
 	init(A,B,M,N,K);
 	dgemm_score_main(A,B,C,D,M,N,K);
 

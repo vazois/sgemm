@@ -4,8 +4,8 @@ NVCC=/usr/local/cuda-8.0/bin/nvcc
 CEXE=cmain
 GEXE=gmain
 
-CBLAS_FLAGS = -lgsl -lcblas -lm
-COPT_FLAGS= -O3 -ffast-math -funroll-loops -msse -mmmx
+CBLAS_FLAGS = -lgsl -lcblas -l
+COPT_FLAGS= -O3 -ffast-math -funroll-loops -msse -mmmx -fomit-frame-pointer
 INCLUDE_DIR=-I /home/vzois/git/openblas/ -L/home/vzois/git/openblas/ -lopenblas
 
 NVCC_FLAGS = --ptxas-options=-v -gencode arch=compute_35,code=sm_35 -rdc=true
