@@ -154,7 +154,7 @@ void ArgParser::menu(){
 	std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<DPT<<this->mysetw(UI_MIDDLE_SPACES,2)<<DPT_H<<std::endl;
 	std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<HELP<<this->mysetw(UI_MIDDLE_SPACES,2)<<HELP_H<<std::endl;*/
 
-	std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<MDARG<<this->mysetw(UI_MIDDLE_SPACES,2)<<MDARG_H<<std::endl;
+	//std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<MDARG<<this->mysetw(UI_MIDDLE_SPACES,2)<<MDARG_H<<std::endl;
 	std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<NARG<<this->mysetw(UI_MIDDLE_SPACES,3)<<NARG_H<<std::endl;
 	/*std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<F1ARG<<this->mysetw(UI_MIDDLE_SPACES,3)<<F1ARG_H<<std::endl;
 	std::cout<<this->mysetw(UI_FRONT_SPACES,0)<<F2ARG<<this->mysetw(UI_MIDDLE_SPACES,3)<<F2ARG_H<<std::endl;

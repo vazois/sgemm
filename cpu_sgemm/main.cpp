@@ -25,9 +25,9 @@ int main(int argc, char **argv){
 	//uint64_t M = 128;
 	//uint64_t N = 128;
 	//uint64_t K = 1024;
-	uint64_t M = 1024;
-	uint64_t N = 1024;
-	uint64_t K = 1024;
+	uint64_t M = 2048;
+	uint64_t N = 2048;
+	uint64_t K = 2048;
 
 	//printf("%" PRIu64 "\n", M);
 	printf("C(%" PRId64 ",%" PRId64 ") = A (%" PRId64 ",%" PRId64 ") x B(%" PRId64 ",%" PRId64 ")\n",M,K,M,N,N,K);
@@ -36,7 +36,7 @@ int main(int argc, char **argv){
 	double *C = new double[M*K];
 	double *D = new double[M*K];
 
-	openblas_set_num_threads(16);
+	openblas_set_num_threads(32);
 	init(A,B,M,N,K);
 	dgemm_score_main(A,B,C,D,M,N,K);
 

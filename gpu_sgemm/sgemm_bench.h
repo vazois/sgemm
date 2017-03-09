@@ -68,6 +68,33 @@ void sgemm_cache(const float *A, const float *B, float *&C, uint64_t N){
 	}
 }
 
+void dgemm_reorder(const float* __restrict__ A, const float* __restrict__ B, float*& __restrict__ C, uint64_t M, uint64_t N, uint64_t K){
+	for(uint64_t k = 0; k < N ;k+=4){
+		for(uint64_t i = 0; i < M ; i++){
+			register uint64_t iA = i * N + k;
+			register float rA = A[ iA ];
+			register float rA1 = A[ iA + 1 ];
+			register float rA2 = A[ iA + 2 ];
+			register float rA3 = A[ iA + 3 ];
+
+			for(uint64_t j = 0 ; j < K ; j+=4){
+				register uint64_t iB = k * K + j;
+				register uint64_t iiB = iB + K;
+				register uint64_t iiiB = iiB + K;
+				register uint64_t iiiiB = iiiB + K;
+
+				register uint64_t iC = i * K + j;
+
+				C[iC] += rA * B[ iB ] + rA1 * B[ iiB ] + rA2 * B[ iiiB ] + rA3 * B[ iiiiB ];
+				C[iC + 1] += rA * B[ iB + 1 ] + rA1 * B[ iiB + 1 ] + rA2 * B[ iiiB + 1 ] + rA3 * B[ iiiiB + 1 ];
+				C[iC + 2] += rA * B[ iB + 2 ] + rA1 * B[ iiB + 2 ] + rA2 * B[ iiiB + 2 ] + rA3 * B[ iiiiB + 2 ];
+				C[iC + 3] += rA * B[ iB + 3 ] + rA1 * B[ iiB + 3 ] + rA2 * B[ iiiB + 3 ] + rA3 * B[ iiiiB + 3 ];
+			}
+		}
+	}
+}
+
+
 void cmpResults(float *A,float *B, float *C, float *D, uint64_t N, std::string a, std::string b){
 	double diff = std::abs(C[0] - D[0]);
 	double maxA = std::abs(C[0]);
@@ -108,7 +135,7 @@ void sgemm_bench(unsigned int N){
 	initF(hA,hB,N);
 	cutil::safeCopyToDevice<float,uint64_t>(dA,hA,sizeof(float)*m*n, "Error copying from hA to dA");
 	cutil::safeCopyToDevice<float,uint64_t>(dB,hB,sizeof(float)*m*n, "Error copying from hB to dB");
-	sgemm_cache(hA,hB,hC,N);
+	dgemm_reorder(hA,hB,hC,N,N,N);
 
 
 	///////////////////////////////////////////////////////////////
@@ -127,6 +154,8 @@ void sgemm_bench(unsigned int N){
 	//shared
 	dim3 mgrid((k-1)/TILE + 1, (m-1)/TILE + 1, 1);
 	dim3 mblock(TILE,TILE,1);
+	mm::sgemm_shared<float,unsigned int,TILE><<<mgrid,mblock>>>(dA,dB,dC,m,n,k);
+	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
 	t.start();
 	mm::sgemm_shared<float,unsigned int,TILE><<<mgrid,mblock>>>(dA,dB,dC,m,n,k);
 	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
@@ -141,6 +170,8 @@ void sgemm_bench(unsigned int N){
 	dim3 kgrid((k-1)/(TILE*TW) + 1, (m-1)/(TILE) + 1, 1);
 	dim3 kblock(TILE,TILE,1);
 	cutil::print_grid(kgrid,kblock,"kgpu");
+	mm::sgemm_shared2<float,unsigned int,TILE,TW><<<kgrid,kblock>>>(dA,dB,dC,m,n,k);
+	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
 	t.start();
 	mm::sgemm_shared2<float,unsigned int,TILE,TW><<<kgrid,kblock>>>(dA,dB,dC,m,n,k);
 	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
@@ -154,6 +185,8 @@ void sgemm_bench(unsigned int N){
 	//dim3 kgrid((k-1)/(TILE*TW) + 1, (m-1)/(TILE) + 1, 1);
 	//dim3 kblock(TILE,TILE,1);
 	cutil::print_grid(kgrid,kblock,"kgpu");
+	mm::sgemm_shared3<float,unsigned int,TILE,TW><<<kgrid,kblock>>>(dA,dB,dC,m,n,k);
+	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");
 	t.start();
 	mm::sgemm_shared3<float,unsigned int,TILE,TW><<<kgrid,kblock>>>(dA,dB,dC,m,n,k);
 	cutil::cudaCheckErr(cudaDeviceSynchronize(),"Error executing sgemm");

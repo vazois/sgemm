@@ -5,7 +5,7 @@ CEXE=cmain
 GEXE=gmain
 
 CBLAS_FLAGS = -lgsl -lcblas -l
-COPT_FLAGS= -O3 -ffast-math -funroll-loops -msse -mmmx -fomit-frame-pointer
+COPT_FLAGS= -O3 -ffast-math -funroll-loops -msse -mmmx -fomit-frame-pointer -m64
 INCLUDE_DIR=-I /home/vzois/git/openblas/ -L/home/vzois/git/openblas/ -lopenblas
 
 NVCC_FLAGS = --ptxas-options=-v -gencode arch=compute_35,code=sm_35 -rdc=true
@@ -18,7 +18,7 @@ cpu:
 	$(CPUC) -std=c++11 -fopenmp cpu_sgemm/main.cpp -o $(CEXE) $(INCLUDE_DIR) $(COPT_FLAGS)
 	
 gpu:
-	$(NVCC) -std=c++11 $(CUBLAS_LIB) $(ARCH) gpu_sgemm/main.cu -o $(GEXE)
+	$(NVCC) -std=c++11 -O3 $(CUBLAS_LIB) $(ARCH) gpu_sgemm/main.cu -o $(GEXE)
 	
 ptx:
 	$(NVCC) -std=c++11 $(CUBLAS_LIB) $(ARCH) -ptx gpu_sgemm/main.cu

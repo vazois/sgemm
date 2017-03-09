@@ -18,7 +18,7 @@ void init(double *&A, double *&B, uint64_t M, uint64_t N, uint64_t K){
 }
 
 float randValueF(){
-	float X=(float)rand()*4/(float)(RAND_MAX) + 1.0f;
+	float X=(float)rand()/(float)(RAND_MAX) + 1.0f;
 	return roundf(X);
 }
 

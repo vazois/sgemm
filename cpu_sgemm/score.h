@@ -8,9 +8,17 @@
 #include <omp.h>
 #include <stdint.h>
 #include <cblas.h>
+#include "../tools/qalloc.h"
 #include "../time/Time.h"
 
-#define THREADS 16
+#define THREADS 128
+
+#define PREFETCH_READ  0
+#define PREFETCH_HIGH_TEMPORAL_LOCALITY 3
+
+#define BX 8
+#define BY 512
+#define BZ 8
 
 void cmpResults(double *A,double *B, double *C, double *D, uint64_t M, uint64_t K, std::string a, std::string b){
 	double diff = std::abs(C[0] - D[0]);
@@ -170,7 +178,7 @@ void dgemm_reorder(const double* __restrict__ A, const double* __restrict__ B, d
 	}
 }
 
-void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t M, uint64_t N, uint64_t K){
+void dgemm_reorder_sse(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_t K){
 	for(uint64_t i = 0; i < M ; i+=2){
 		for(uint64_t k = 0; k < N ;k+=4){
 			register uint64_t iA = i * N + k;
@@ -244,9 +252,10 @@ void dgemm_reorder_sse(const double *A, const double *B, double *&C, uint64_t M,
 }
 
 void dgemm_block(const double* __restrict__ A, const double* __restrict__  B, double*& __restrict__  C, uint64_t M, uint64_t N, uint64_t K){
-	uint64_t Bx = 4;//
-	uint64_t By = MIN(1024,K);//
-	uint64_t Bz = 4;//
+	uint64_t Bx = BX;//
+	uint64_t By = MIN(BY,K);//
+	uint64_t Bz = BZ;//
+
 	for(uint64_t j = 0; j < K; j+=By){
 		for(uint64_t i = 0; i < M; i+=Bx){
 			for(uint64_t k = 0; k < N; k+=Bz){
@@ -256,6 +265,8 @@ void dgemm_block(const double* __restrict__ A, const double* __restrict__  B, do
 					for(uint64_t ii = i; ii < i + Bx ; ii+=2){
 						register uint64_t iA = ii * N + kk;
 						register uint64_t iiA = iA + N;
+						//__builtin_prefetch (A + iA + N, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+						//__builtin_prefetch (A + iiA + N, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
 						__m128d vA1 = _mm_load_pd1(&A[iA]);//rA
 						__m128d vA2 = _mm_load_pd1(&A[iA+1]);//rA1
 						__m128d vA3 = _mm_load_pd1(&A[iA+2]);//rA2
@@ -274,6 +285,9 @@ void dgemm_block(const double* __restrict__ A, const double* __restrict__  B, do
 
 							register uint64_t iC = ii * K + jj;
 							register uint64_t iiC = iC + K;
+							__builtin_prefetch (B + iB + K, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+							__builtin_prefetch (B + iiB + K, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+							//__builtin_prefetch (B + iiiB + K, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
 
 							__m128d vB1 = _mm_load_pd(&B[iB]);//rB,rB1
 							__m128d vB2 = _mm_load_pd(&B[iB+2]);//rB2,rB3
@@ -320,23 +334,138 @@ void dgemm_block(const double* __restrict__ A, const double* __restrict__  B, do
 	}
 }
 
-void dgemm_block3(const double* __restrict__ A, const double* __restrict__  B, double*& __restrict__  C, uint64_t M, uint64_t N, uint64_t K){
-	uint64_t Bx = 4;//
+void dgemm_func2(const double* A, const double* B, double*& C, uint64_t M, uint64_t N, uint64_t K, uint32_t id, uint32_t group){
+	uint64_t Bx = 32;//
 	uint64_t By = MIN(1024,K);//
-	uint64_t Bz = 4;//
+	uint64_t Bz = 32;//
+	//printf("By:%d\n",By);
 
+	uint32_t low = (id*M)/group;
+	uint32_t high = ((id+1)*M)/group;
+
+	double A_[Bx * Bz];
+	double B_[Bz * By];
+	double C_[Bx * By];
+	//printf("<%d %d>\n",x,y);
 	for(uint64_t k = 0; k < N; k+=Bz){
-		for(uint64_t i = 0; i < M; i+=Bx){
+		for(uint64_t i = low; i < high; i+=Bx){
 			for(uint64_t j = 0; j < K; j+=By){
 
-				for(uint64_t kk = k; kk < k + Bz; kk++){
-					for(uint64_t ii = i; ii < i + Bx; ii++){
+				register const double *__restrict__ oA = &A[i*N+k];
+				register double *__restrict__ oA_ = A_;
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					//__builtin_prefetch (oA + N, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+					memcpy(oA_,oA,sizeof(double)*Bz); oA+=N; oA_+=Bz;
+				}
+
+				register const double *__restrict__ oB = &B[k*K+j];
+				register double *__restrict__ oB_ = B_;
+				for(uint64_t kk = 0; kk < Bz; kk++){
+					__builtin_prefetch (oB + K, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+					memcpy(oB_,oB,sizeof(double)*By); oB+=K; oB_+=By;
+				}
+
+				register double *__restrict__ oC = &C[i*K+j];
+				register double *__restrict__ oC_ = C_;
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					__builtin_prefetch (oC + K, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+					memcpy(oC_,oC,sizeof(double)*By); oC+=K; oC_+=By;
+				}
+
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					for(uint64_t kk = 0; kk < Bz; kk++){
+						register double rA = A_[ii * Bz + kk];
+						//register double rA = A[(ii+i) * N + kk+k];
+						for(uint64_t jj = 0; jj < By; jj++){
+							C_[ii*By + jj]+= rA * B_[kk*By + jj];
+							//C[(ii+i) * K + jj + j]+= rA * B_[kk*By + jj];
+							//C[(ii+i) * K + jj + j]+= rA * B[(kk+k)*K + jj+j];
+						}
+					}
+				}
+
+				/*for(uint64_t ii = 0; ii < Bx ; ii+=2){
+					for(uint64_t kk = 0; kk < Bz ;kk+=4){
+						register uint64_t iA = ii * Bz + kk;
+						register uint64_t iiA = iA + Bz;
+						//__builtin_prefetch (A + iA, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+						//__builtin_prefetch (A + iiA, PREFETCH_READ, PREFETCH_HIGH_TEMPORAL_LOCALITY);
+						__m128d vA1 = _mm_load_pd1(&A_[iA]);//rA
+						__m128d vA2 = _mm_load_pd1(&A_[iA+1]);//rA1
+						__m128d vA3 = _mm_load_pd1(&A_[iA+2]);//rA2
+						__m128d vA4 = _mm_load_pd1(&A_[iA+3]);//rA3
+
+						__m128d vA11 = _mm_load_pd1(&A_[iiA]);//rA
+						__m128d vA12 = _mm_load_pd1(&A_[iiA+1]);//rA1
+						__m128d vA13 = _mm_load_pd1(&A_[iiA+2]);//rA2
+						__m128d vA14 = _mm_load_pd1(&A_[iiA+3]);//rA3
+
+						for(uint64_t jj = 0 ; jj < By ; jj+=4){
+							register uint64_t iB = kk*By + jj;
+							register uint64_t iiB = iB + By;
+							register uint64_t iiiB = iiB + By;
+							register uint64_t iiiiB = iiiB + By;
+
+							register uint64_t iC = (ii+i) * K + jj + j;
+							register uint64_t iiC = iC + N;
+
+							__m128d vB1 = _mm_load_pd(&B_[iB]);//rB,rB1
+							__m128d vB2 = _mm_load_pd(&B_[iB+2]);//rB2,rB3
+							__m128d vC1 = _mm_load_pd(&C[iC]);//rC,rC1
+							__m128d vC2 = _mm_load_pd(&C[iC+2]);//rC2,rC3
+							__m128d vC3 = _mm_load_pd(&C[iiC]);//rC,rC1
+							__m128d vC4 = _mm_load_pd(&C[iiC+2]);//rC2,rC3
+
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA1,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA1,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA11,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA11,vB2));
+
+							vB1 = _mm_load_pd(&B_[iiB]);
+							vB2 = _mm_load_pd(&B_[iiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA2,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA2,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA12,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA12,vB2));
+
+							vB1 = _mm_load_pd(&B_[iiiB]);
+							vB2 = _mm_load_pd(&B_[iiiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA3,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA3,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA13,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA13,vB2));
+
+							vB1 = _mm_load_pd(&B_[iiiiB]);
+							vB2 = _mm_load_pd(&B_[iiiiB+2]);
+							vC1 = _mm_add_pd(vC1,_mm_mul_pd(vA4,vB1));
+							vC2 = _mm_add_pd(vC2,_mm_mul_pd(vA4,vB2));
+							vC3 = _mm_add_pd(vC3,_mm_mul_pd(vA14,vB1));
+							vC4 = _mm_add_pd(vC4,_mm_mul_pd(vA14,vB2));
+
+							_mm_store_pd(&C[iC],vC1);
+							_mm_store_pd(&C[iC+2],vC2);
+							_mm_store_pd(&C[iiC],vC3);
+							_mm_store_pd(&C[iiC+2],vC4);
+						}
+					}
+				}*/
+
+				//dgemm_reorder_sse(A_, B_, C_, Bx, Bz, By);
+
+				oC = &C[i*K+j];
+				oC_ = C_;
+				for(uint64_t ii = 0; ii < Bx; ii++){
+					memcpy(oC,oC_,sizeof(double)*By); oC+=K; oC_+=By;
+				}
+
+				/*for(uint64_t ii = i; ii < i + Bx; ii++){
+					for(uint64_t kk = k; kk < k + Bz; kk++){
 						register double rA = A[ii * N + kk];
 						for(uint64_t jj = j; jj < j + By; jj++){
 							C[ii * K + jj]+= rA * B[kk*K + jj];
 						}
 					}
-				}
+				}*/
 
 			}
 		}
@@ -344,7 +473,7 @@ void dgemm_block3(const double* __restrict__ A, const double* __restrict__  B, d
 }
 
 void dgemm_omp(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_t K){
-	uint32_t threads = 16;
+	uint32_t threads = THREADS;
 	uint32_t div = log2(threads);
 	omp_set_num_threads(threads);
 
@@ -356,9 +485,9 @@ void dgemm_omp(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_
 		uint32_t high = ( (tid+1) * M ) / gid;
 
 
-		uint64_t Bx = 8;//
-		uint64_t By = MIN(1024,K);//
-		uint64_t Bz = 8;//
+		uint64_t Bx = BX;//
+		uint64_t By = MIN(BY,K);//
+		uint64_t Bz = BZ;//
 		for(uint64_t k = 0; k < N; k+=Bz){
 			for(uint64_t i = low; i < high; i+=Bx){
 				for(uint64_t j = 0; j < K; j+=By){
@@ -510,40 +639,13 @@ void dgemm_omp(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_
 	}*/
 }
 
-void dgemm_func2(const double* __restrict__ A, const double* __restrict__  B, double*& __restrict__  C, uint64_t M, uint64_t N, uint64_t K, uint32_t id, uint32_t group){
-	uint64_t Bx = 4;//
-	uint64_t By = MIN(1024,K);//
-	uint64_t Bz = 4;//
-
-	for(uint64_t k = 0; k < N; k+=Bz){
-		for(uint64_t i = 0; i < M; i+=Bx){
-			for(uint64_t j = 0; j < K; j+=By){
-
-				for(uint64_t kk = k; kk < k + Bz; kk++){
-					for(uint64_t ii = i; ii < i + Bx; ii++){
-						register double rA = A[ii * N + kk];
-						for(uint64_t jj = j; jj < j + By; jj++){
-							C[ii * K + jj]+= rA * B[kk*K + jj];
-						}
-					}
-				}
-
-			}
-		}
-	}
-}
-
 void dgemm_func(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_t K, uint32_t id, uint32_t group){
-	uint32_t threads = 1;
-	uint32_t div = log2(threads);
-	omp_set_num_threads(threads);
-
 	uint32_t low = (id*M)/group;
 	uint32_t high = ((id+1)*M)/group;
 
-	uint64_t Bx = 8;//
+	uint64_t Bx = 4;//
 	uint64_t By = MIN(1024,K);//
-	uint64_t Bz = 8;//
+	uint64_t Bz = 4;//
 	for(uint64_t k = 0; k < N; k+=Bz){
 		for(uint64_t i = low; i < high; i+=Bx){
 			for(uint64_t j = 0; j < K; j+=By){
@@ -619,8 +721,6 @@ void dgemm_func(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64
 }
 
 void dgemm_pthread(double *A, double *B, double *&C, uint64_t M, uint64_t N, uint64_t K){
-	uint32_t threads = 1;
-	//std::thread *t = new std::thread(dgemm_omp3,A,B,C,M,N,K,);
 	std::thread tarray[THREADS];
 
 	for(uint32_t i = 0; i<THREADS;i++){
@@ -636,7 +736,7 @@ void dgemm_pthread(double *A, double *B, double *&C, uint64_t M, uint64_t N, uin
 
 void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, uint64_t N,uint64_t K){
 	Time<secs> t;
-	uint32_t rounds = 10;
+	uint32_t rounds = 1;
 
 	zeros(C,M,K);
 	//1
@@ -675,28 +775,12 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, 
 	double dgemm_reg_blocking_t = t.lap("dgemm_reg_blocking elapsed time in secs");
 	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_reg_blocking");
 	zeros(D,M,K);
-	dgemm_reg_blocking_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_reg_blocking(A,B,D,M,N,K);
-		dgemm_reg_blocking_t += t.lap("dgemm_reg_blocking elapsed time in secs");
-	}
-	dgemm_reg_blocking_t/=rounds;
-	zeros(D,M,K);
 
 	//5
 	t.start();
 	dgemm_reorder(A,B,D,M,N,K);
 	double dgemm_reorder_t = t.lap("dgemm_reorder elapsed time in secs");
 	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_reorder");
-	zeros(D,M,K);
-	dgemm_reorder_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_reorder(A,B,D,M,N,K);
-		dgemm_reorder_t += t.lap("dgemm_reorder elapsed time in secs");
-	}
-	dgemm_reorder_t/=rounds;
 	zeros(D,M,K);
 
 	//6
@@ -705,28 +789,12 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, 
 	double dgemm_reorder_sse_t = t.lap("dgemm_reorder_sse elapsed time in secs");
 	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_reorder_sse");
 	zeros(D,M,K);
-	dgemm_reorder_sse_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_reorder_sse(A,B,D,M,N,K);
-		dgemm_reorder_sse_t += t.lap("dgemm_reorder_sse elapsed time in secs");
-	}
-	dgemm_reorder_sse_t/=rounds;
-	zeros(D,M,K);
 
 	//7
 	t.start();
 	dgemm_block(A,B,D,M,N,K);
 	double dgemm_block_t = t.lap("dgemm_block elapsed time in secs");
 	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_block");
-	zeros(D,M,K);
-	dgemm_block_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_block(A,B,D,M,N,K);
-		dgemm_block_t += t.lap("dgemm_block elapsed elapsed time in secs");
-	}
-	dgemm_block_t/=rounds;
 	zeros(D,M,K);
 
 	//8
@@ -735,28 +803,12 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, 
 	double dgemm_omp_t = t.lap("dgemm_omp elapsed time in secs");
 	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_omp");
 	zeros(D,M,K);
-	dgemm_omp_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_omp(A,B,D,M,N,K);
-		dgemm_omp_t += t.lap("dgemm_omp elapsed time in secs");
-	}
-	dgemm_omp_t/=rounds;
-	zeros(D,M,K);
 
-	t.start();
-	dgemm_pthread(A,B,D,M,N,K);
-	double dgemm_pthread_t = t.lap("dgemm_pthread elapsed time in secs");
-	cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_pthread");
-	zeros(D,M,K);
-	dgemm_pthread_t = 0;
-	for(uint32_t i = 0;i<10;i++){
-		t.start();
-		dgemm_pthread(A,B,D,M,N,K);
-		dgemm_pthread_t += t.lap("dgemm_pthread elapsed time in secs");
-	}
-	dgemm_pthread_t/=rounds;
-	zeros(D,M,K);
+	//t.start();
+	///dgemm_pthread(A,B,D,M,N,K);
+	//double dgemm_pthread_t = t.lap("dgemm_pthread elapsed time in secs");
+	//cmpResults(A,B,C,D,M,K,"dgemm_cblas","dgemm_pthread");
+	//zeros(D,M,K);
 
 	double GFLOPS = (double)(M*N*K*2);
 	std::cout<< "Elapsed time for dgemm_cblas: " << dgemm_cblas_t << " seconds\n";
@@ -767,7 +819,7 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, 
 	std::cout<< "Elapsed time for dgemm_reorder_sse: " << dgemm_reorder_sse_t << " seconds\n";
 	std::cout<< "Elapsed time for dgemm_block: " << dgemm_block_t << " seconds\n";
 	std::cout<< "Elapsed time for dgemm_omp: " << dgemm_omp_t<< " seconds\n";
-	std::cout<< "Elapsed time for dgemm_pthread: " << dgemm_pthread_t<< " seconds\n";
+	//std::cout<< "Elapsed time for dgemm_pthread: " << dgemm_pthread_t<< " seconds\n";
 
 	std::cout << "GFLOPS for dgemm_cblas: " << ((double)(GFLOPS/dgemm_cblas_t))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_base: " << ((double)(GFLOPS/dgemm_base_t))/1000000000 << "\n";
@@ -777,7 +829,7 @@ void dgemm_score_main(double *A, double *B, double *&C, double *&D, uint64_t M, 
 	std::cout << "GFLOPS for dgemm_reorder_sse: " << ((double)(GFLOPS/dgemm_reorder_sse_t))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_block: " << ((double)(GFLOPS/dgemm_block_t))/1000000000 << "\n";
 	std::cout << "GFLOPS for dgemm_omp: " << ((double)(GFLOPS/dgemm_omp_t))/1000000000 << "\n";
-	std::cout << "GFLOPS for dgemm_pthread: " << ((double)(GFLOPS/dgemm_pthread_t))/1000000000 << "\n";
+	//std::cout << "GFLOPS for dgemm_pthread: " << ((double)(GFLOPS/dgemm_pthread_t))/1000000000 << "\n";
 }
 
 #endif

@@ -10,6 +10,7 @@ int main(int argc,char **argv){
 
 	if (ap.count() == 0){
 			ap.menu();
+			return 1;
 	}else{
 		if( !ap.exists("-n") ){
 			std::cout << "Please provide matrix dimension using -n. Run without arguments to get menu options!!!" << std::endl;
