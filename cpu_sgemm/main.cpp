@@ -13,21 +13,21 @@ int main(int argc, char **argv){
 	ArgParser ap;
 	ap.parseArgs(argc,argv);
 
-	/*if (ap.count() == 0){
+	if (ap.count() == 0){
 		ap.menu();
+		return 0;
 	}else{
 		if( !ap.exists("-n") ){
-			std::cout << "Please provide matrix dimension using -n. Run without arguments to get menu options!!!" << std::endl;
+			std::cout << "Please provide matrix dimension using -n=<dimension>. Run without arguments to get menu options!!!" << std::endl;
 			return 1;
 		}
-	}*/
-
+	}
 	//uint64_t M = 128;
 	//uint64_t N = 128;
 	//uint64_t K = 1024;
-	uint64_t M = 2048;
-	uint64_t N = 2048;
-	uint64_t K = 2048;
+	uint64_t M = ap.getInt("-n");;
+	uint64_t N = ap.getInt("-n");;
+	uint64_t K = ap.getInt("-n");;
 
 	//printf("%" PRIu64 "\n", M);
 	printf("C(%" PRId64 ",%" PRId64 ") = A (%" PRId64 ",%" PRId64 ") x B(%" PRId64 ",%" PRId64 ")\n",M,K,M,N,N,K);

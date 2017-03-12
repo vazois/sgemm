@@ -11,7 +11,7 @@
 #include "../tools/qalloc.h"
 #include "../time/Time.h"
 
-#define THREADS 128
+#define THREADS 16
 
 #define PREFETCH_READ  0
 #define PREFETCH_HIGH_TEMPORAL_LOCALITY 3
